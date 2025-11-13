@@ -966,8 +966,7 @@ class WafrGenaiAcceleratorStack(Stack):
                 "BEDROCK_MAX_TRIES" : "5",
                 "GUARDRAIL_ID" : GUARDRAIL_ID or 'Not Selected' 
             },
-            role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1
+            role = startWafrReviewFunctionRole
         )
         extract_document_text = _lambda.Function(self, "extract_document_text",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -975,8 +974,7 @@ class WafrGenaiAcceleratorStack(Stack):
             code=_lambda.Code.from_asset("lambda_dir/extract_document_text"),
             timeout=cdk.Duration.minutes(15),
             memory_size=256,
-            role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1
+            role = startWafrReviewFunctionRole
         )
         generate_solution_summary = _lambda.Function(self, "generate_solution_summary",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -984,8 +982,7 @@ class WafrGenaiAcceleratorStack(Stack):
             code=_lambda.Code.from_asset("lambda_dir/generate_solution_summary"),
             timeout=cdk.Duration.minutes(15),
             memory_size=256,
-            role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1
+            role = startWafrReviewFunctionRole
         )
         generate_prompts = _lambda.Function(self, "generate_prompts_for_all_the_selected_pillars",
             runtime=_lambda.Runtime.PYTHON_3_12,
@@ -994,7 +991,6 @@ class WafrGenaiAcceleratorStack(Stack):
             timeout=cdk.Duration.minutes(15),
             memory_size=256,
             role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1,
             environment={
                 "WAFR_REFERENCE_DOCS_BUCKET" : WAFR_REFERENCE_DOCS_BUCKET
             }
@@ -1006,7 +1002,6 @@ class WafrGenaiAcceleratorStack(Stack):
             timeout=cdk.Duration.minutes(15),
             memory_size=256,
             role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1,
             environment={
                 "BEDROCK_SLEEP_DURATION" : "60",
                 "BEDROCK_MAX_TRIES" : "5"
@@ -1018,8 +1013,7 @@ class WafrGenaiAcceleratorStack(Stack):
             code=_lambda.Code.from_asset("lambda_dir/update_review_status"),
             timeout=cdk.Duration.minutes(15),
             memory_size=256,
-            role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1
+            role = startWafrReviewFunctionRole
         )
 
         # Create an IAM role for the Step Function
