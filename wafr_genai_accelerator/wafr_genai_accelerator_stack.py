@@ -585,16 +585,22 @@ class WafrGenaiAcceleratorStack(Stack):
             
         instance_target = elasticloadbalancingv2_targets.InstanceTarget(ec2_create, 8501)
         
-        # Create target group
+        # Create target group with improved health check settings
         target_group = elbv2.ApplicationTargetGroup(
             self, "StreamlitAppTargetGroup-" + entryTimestamp,
             port=8501,
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[instance_target], 
             health_check=elbv2.HealthCheck(
-                path="/",
-                port="8501"
+                path="/_stcore/health",  # Streamlit health endpoint
+                port="8501",
+                protocol=elbv2.Protocol.HTTP,
+                interval=Duration.seconds(30),  # Check every 30 seconds
+                timeout=Duration.seconds(10),  # Wait 10 seconds for response
+                healthy_threshold_count=2,  # 2 successful checks = healthy
+                unhealthy_threshold_count=5  # 5 failed checks = unhealthy (allows time for startup)
             ),
+            deregistration_delay=Duration.seconds(30),
             vpc=vpc
         )
         # Add listener to ALB
@@ -653,11 +659,17 @@ class WafrGenaiAcceleratorStack(Stack):
             web_acl_arn=waf_web_acl.attr_arn
         )
         
-        # Uses ALB - Creating CloudFront CDN Distribution
+        # Uses ALB - Creating CloudFront CDN Distribution with improved timeout settings
         cdn = cloudfront.Distribution(self, 'CDN', 
             comment='CDK created distribution for AWS Well Architect Framework Review (WAFR) Accelerator',
             default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.LoadBalancerV2Origin(alb, http_port=80, protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY),
+                origin=origins.LoadBalancerV2Origin(
+                    alb, 
+                    http_port=80, 
+                    protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+                    read_timeout=Duration.seconds(60),  # Increased timeout for Streamlit responses
+                    keepalive_timeout=Duration.seconds(5)
+                ),
                 cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                 origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,

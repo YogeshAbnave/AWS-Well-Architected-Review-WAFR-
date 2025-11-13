@@ -140,9 +140,14 @@ done
 if [ $COUNTER -eq $MAX_ATTEMPTS ]; then
     echo "WARNING: Streamlit did not respond within 5 minutes"
     echo "Checking service status..."
-    systemctl status wafr-streamlit.service
+    systemctl status wafr-streamlit.service --no-pager
+    echo ""
+    echo "Last 50 lines of Streamlit logs:"
+    tail -n 50 /var/log/wafr-streamlit.log
 else
     echo "Streamlit is responding on port 8501!"
+    echo "Verifying health endpoint..."
+    curl -s http://localhost:8501/_stcore/health || echo "Health endpoint check failed, but main app is running"
     touch /opt/wafr-app/.deployment-complete
 fi
 
