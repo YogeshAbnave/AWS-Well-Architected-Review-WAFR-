@@ -1151,8 +1151,7 @@ class WafrGenaiAcceleratorStack(Stack):
                 "WAFR_REFERENCE_DOCS_BUCKET" : WAFR_REFERENCE_DOCS_BUCKET,
                 "GUARDRAIL_ID" : GUARDRAIL_ID or 'Not Selected' 
             },
-            role = startWafrReviewFunctionRole,
-            reserved_concurrent_executions=1
+            role = startWafrReviewFunctionRole
         )
 
         wafrPillarQuestionPromptsTable.grant_write_data(startWafrReviewFunction)
