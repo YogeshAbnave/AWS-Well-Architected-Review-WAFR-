@@ -1,0 +1,28 @@
+# AWS CDK and Infrastructure
+aws-cdk-lib>=2.191.0
+constructs>=10.0.0
+cdklabs.generative_ai_cdk_constructs==0.1.303
+
+# AWS SDK
+boto3>=1.37.0
+botocore>=1.37.0
+
+# Streamlit UI Framework
+streamlit>=1.44.0
+altair>=5.5.0
+pillow>=11.1.0
+
+# LangChain for AI/ML
+langchain>=0.3.21
+langchain-aws>=0.2.17
+langchain-community>=0.3.20
+langchain-core>=0.3.64
+
+# Document Processing
+pypdf>=5.4.0
+
+# Utilities
+python-dotenv>=1.1.0
+requests>=2.32.3
+pydantic>=2.11.4
+PyYAML>=6.0.2
