@@ -1,16 +1,24 @@
 # AWS Well-Architected Review (WAFR) Acceleration with Generative AI (GenAI)
 
-## Name
+## 🚀 Quick Start - Automatic Deployment
 
-AWS Well-Architected Framework Review (WAFR) Acceleration with Generative AI (GenAI)
-<br/> 
+**Push to deploy!** This repository automatically deploys via GitHub Actions.
+
+1. **Add GitHub Secrets:** `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+2. **Enable Bedrock Models:** Claude 3.5 Sonnet & Titan Embeddings (us-east-1)
+3. **Push to main:** `git push origin main`
+4. **Wait 15-20 minutes** for automatic deployment
+5. **Create user & login**
+
+📖 **Full instructions:** See [PUSH-TO-DEPLOY.md](PUSH-TO-DEPLOY.md)
+
+---
+
 ## Description
 
 This is a comprehensive SaaS designed to facilitate and expedite the AWS Well-Architected Framework Review process. 
-<br/> 
 
-This aims to accelerate AWS Well-Architected Framework Review (WAFR) velocity and adoption by leveraging the power of generative AI to provide organizations with automated comprehensive analysis and recommendations for optimizing their AWS architectures.
-<br/> 
+This aims to accelerate AWS Well-Architected Framework Review (WAFR) velocity and adoption by leveraging the power of generative AI to provide organizations with automated comprehensive analysis and recommendations for optimizing their AWS architectures. 
 
 ## Core Features
 

@@ -1,0 +1,131 @@
+name: CDK Full Stack Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 992167236365
+  STACK_NAME: WellArchitectedReviewUsingGenAIStack
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS credentials
+        run: |
+          echo "AWS Account: $(aws sts get-caller-identity --query Account --output text)"
+          echo "AWS Region: ${{ env.AWS_REGION }}"
+
+      - name: Install AWS CDK
+        run: |
+          npm install -g aws-cdk
+          cdk --version
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check if CDK is bootstrapped
+        id: check-bootstrap
+        run: |
+          if aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "bootstrapped=true" >> $GITHUB_OUTPUT
+          else
+            echo "bootstrapped=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bootstrap CDK (if needed)
+        if: steps.check-bootstrap.outputs.bootstrapped == 'false'
+        run: |
+          echo "Bootstrapping CDK..."
+          cdk bootstrap aws://${{ env.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+
+      - name: Synthesize CDK stack
+        run: |
+          echo "Synthesizing CDK stack..."
+          cdk synth
+
+      - name: Check if stack exists
+        id: check-stack
+        run: |
+          if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Stack exists - will update"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Stack doesn't exist - will create"
+          fi
+
+      - name: Deploy CDK stack
+        run: |
+          echo "Deploying CDK stack..."
+          cdk deploy --require-approval never --outputs-file outputs.json
+
+      - name: Display stack outputs
+        if: success()
+        run: |
+          echo "=========================================="
+          echo "Deployment Complete!"
+          echo "=========================================="
+          if [ -f outputs.json ]; then
+            cat outputs.json
+            echo ""
+            echo "Application URL:"
+            jq -r '.[$ENV.STACK_NAME].CloudFrontURL // "Not found"' outputs.json
+          fi
+
+      - name: Upload outputs as artifact
+        if: success()
+        uses: actions/upload-artifact@v3
+        with:
+          name: stack-outputs
+          path: outputs.json
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "✅ Stack deployed successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "1. Get the CloudFront URL from outputs above"
+          echo "2. Create a Cognito user (see DEPLOYMENT-GUIDE.md)"
+          echo "3. Login and start using the application"
+          echo ""
+          echo "To create a user, run:"
+          echo "  bash deploy.sh post-deploy"
+          echo "or"
+          echo "  .\deploy.ps1 post-deploy"
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check the logs above for errors"
+          echo "Common issues:"
+          echo "- Bedrock model access not enabled"
+          echo "- AWS credentials insufficient permissions"
+          echo "- Resource limits exceeded"
