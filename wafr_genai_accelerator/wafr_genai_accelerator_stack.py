@@ -373,6 +373,7 @@ class WafrGenaiAcceleratorStack(Stack):
         vpc = ec2.Vpc(self, "StreamlitAppVPC-" + entryTimestamp,
             max_azs=2,
             nat_gateways=1,
+            restrict_default_security_groups=False,  # Disable to avoid IAM permission issues
             subnet_configuration=[
                 ec2.SubnetConfiguration(
                     subnet_type=ec2.SubnetType.PUBLIC,
