@@ -534,10 +534,10 @@ class WafrGenaiAcceleratorStack(Stack):
             instance_type=ec2.InstanceType("t2.micro"),
             machine_image=ec2.AmazonLinuxImage(generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023),
             vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_group=ec2_security_group,
             role=ec2Role,
-            associate_public_ip_address=False,  # This disables public IPv4
+            associate_public_ip_address=True,  # Enable public IPv4 for internet access
             #detailed_monitoring=True,
             user_data=ec2.UserData.custom(user_data_script),
             block_devices=[
@@ -572,11 +572,12 @@ class WafrGenaiAcceleratorStack(Stack):
             "Allow inbound connections only from Cloudfront to Streamlit port"
         )
         
-        # Create ALB
+        # Create ALB in public subnets
         alb = elbv2.ApplicationLoadBalancer(
             self, 'StreamlitAppALB-' + entryTimestamp,
             vpc=vpc,
             internet_facing=True,
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
             security_group=alb_security_group
         )
         
@@ -653,6 +654,12 @@ class WafrGenaiAcceleratorStack(Stack):
             self, "FrontEnd-EC2-Instance-Id",
             value=EC2_INSTANCE_ID,
             description="Front end UI EC2 instance id created at : " + entryTimestampLabel
+        )
+        
+        CfnOutput(
+            self, "FrontEnd-EC2-Public-IP",
+            value=ec2_create.instance_public_ip,
+            description="EC2 instance public IP for direct access (http://<ip>:8501)"
         )
         
         # Create WAF WebACL
