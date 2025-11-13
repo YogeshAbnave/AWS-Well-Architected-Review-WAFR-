@@ -26,7 +26,9 @@ from aws_cdk import (
     aws_stepfunctions_tasks as tasks,
     aws_lambda_event_sources as lambda_events,
     aws_logs,
-    aws_bedrock as bedrockcdk
+    aws_bedrock as bedrockcdk,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions
 )
 import aws_cdk.aws_elasticloadbalancingv2_targets as elasticloadbalancingv2_targets
 
@@ -526,6 +528,7 @@ class WafrGenaiAcceleratorStack(Stack):
         
         user_data_script = re.sub(r'{{REGION}}', Stack.of(self).region, user_data_script)
         user_data_script = re.sub(r'{{APP_BUCKET}}', APP_DEPLOYMENT_BUCKET_NAME, user_data_script)
+        user_data_script = re.sub(r'{{STACK_NAME}}', Stack.of(self).stack_name, user_data_script)
   
         ec2_create = ec2.Instance(self, "StreamlitAppInstance-" + entryTimestamp,
             instance_type=ec2.InstanceType("t2.micro"),
@@ -592,13 +595,14 @@ class WafrGenaiAcceleratorStack(Stack):
             protocol=elbv2.ApplicationProtocol.HTTP,
             targets=[instance_target], 
             health_check=elbv2.HealthCheck(
-                path="/_stcore/health",  # Streamlit health endpoint
+                path="/",  # Root path for health check
                 port="8501",
                 protocol=elbv2.Protocol.HTTP,
                 interval=Duration.seconds(30),  # Check every 30 seconds
                 timeout=Duration.seconds(10),  # Wait 10 seconds for response
                 healthy_threshold_count=2,  # 2 successful checks = healthy
-                unhealthy_threshold_count=5  # 5 failed checks = unhealthy (allows time for startup)
+                unhealthy_threshold_count=10,  # 10 failed checks = unhealthy (allows ~5 minutes for startup)
+                enabled=True
             ),
             deregistration_delay=Duration.seconds(30),
             vpc=vpc
@@ -616,6 +620,32 @@ class WafrGenaiAcceleratorStack(Stack):
             peer=alb_security_group,
             connection=ec2.Port.tcp(8501),
             description="Allow HTTP traffic from ALB"
+        )
+        
+        # CloudWatch Alarm for unhealthy targets
+        unhealthy_target_alarm = cloudwatch.Alarm(
+            self, "UnhealthyTargetAlarm-" + entryTimestamp,
+            metric=target_group.metric_unhealthy_host_count(),
+            threshold=1,
+            evaluation_periods=2,
+            datapoints_to_alarm=2,
+            alarm_description="Alert when target is unhealthy",
+            treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING
+        )
+        
+        # CloudWatch Alarm for EC2 instance status check
+        instance_status_alarm = cloudwatch.Alarm(
+            self, "InstanceStatusAlarm-" + entryTimestamp,
+            metric=cloudwatch.Metric(
+                namespace="AWS/EC2",
+                metric_name="StatusCheckFailed",
+                dimensions_map={"InstanceId": EC2_INSTANCE_ID},
+                statistic="Average",
+                period=Duration.minutes(5)
+            ),
+            threshold=1,
+            evaluation_periods=2,
+            alarm_description="Alert when EC2 instance status check fails"
         )
             
         #Print the Cloudfront Public Domain Name after CDK Deployment for easier access
