@@ -207,6 +207,39 @@ class WafrGenaiAcceleratorStack(Stack):
             auto_delete_objects=True)
         
         UPLOAD_BUCKET_NAME = userUploadBucket.bucket_name
+        
+        # S3 Bucket for EC2 application deployment
+        appDeploymentBucket = s3.Bucket(self, 
+            'wafr-accelerator-app-deployment',
+            bucket_name=f"wafr-accelerator-app-{entryTimestamp}",
+            enforce_ssl=True,
+            server_access_logs_bucket=accessLogsBucket,
+            server_access_logs_prefix="wafr-app-deployment-logs/",
+            removal_policy=RemovalPolicy.DESTROY, 
+            auto_delete_objects=True)
+        
+        APP_DEPLOYMENT_BUCKET_NAME = appDeploymentBucket.bucket_name
+        
+        # Deploy application code to S3 bucket
+        appCodeDeploy = s3deploy.BucketDeployment(self, "deployAppCode",
+            sources=[
+                s3deploy.Source.asset('.', exclude=[
+                    'cdk.out/**',
+                    '.git/**',
+                    '.github/**',
+                    'node_modules/**',
+                    '__pycache__/**',
+                    '*.pyc',
+                    '.pytest_cache/**',
+                    '.venv/**',
+                    'venv/**',
+                    '.DS_Store',
+                    '.kiro/**'
+                ])
+            ],
+            destination_bucket=appDeploymentBucket,
+            memory_limit=2048
+        )
               
         DEAD_LETTER_QUEUE_UNIQUE_NAME = "wafrAcceleratorDeadLetterQueue-" + entryTimestamp
         WAFR_ACCELERATOR_QUEUE_UNIQUE_NAME = "wafrAcceleratorQueue-" + entryTimestamp
@@ -393,7 +426,9 @@ class WafrGenaiAcceleratorStack(Stack):
                                 f"arn:aws:s3:::wafr-prompts-{entryTimestamp}/*",
                                 f"arn:aws:s3:::wafr-accelerator-ui-{entryTimestamp}",
                                 f"arn:aws:s3:::wafr-accelerator-ui-{entryTimestamp}/*",
-                                f"arn:aws:s3:::wafr-accelerator-upload-{entryTimestamp}/*"
+                                f"arn:aws:s3:::wafr-accelerator-upload-{entryTimestamp}/*",
+                                f"arn:aws:s3:::wafr-accelerator-app-{entryTimestamp}",
+                                f"arn:aws:s3:::wafr-accelerator-app-{entryTimestamp}/*"
                             ],
                             conditions={
                                 "StringEquals": {
@@ -490,6 +525,7 @@ class WafrGenaiAcceleratorStack(Stack):
             user_data_script = f.read()
         
         user_data_script = re.sub(r'{{REGION}}', Stack.of(self).region, user_data_script)
+        user_data_script = re.sub(r'{{APP_BUCKET}}', APP_DEPLOYMENT_BUCKET_NAME, user_data_script)
   
         ec2_create = ec2.Instance(self, "StreamlitAppInstance-" + entryTimestamp,
             instance_type=ec2.InstanceType("t2.micro"),

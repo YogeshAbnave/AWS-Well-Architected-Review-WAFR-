@@ -30,22 +30,129 @@ rm -rf aws awscliv2.zip
 
 # Set AWS region
 export AWS_DEFAULT_REGION={{REGION}}
+export AWS_REGION={{REGION}}
 echo "export AWS_DEFAULT_REGION={{REGION}}" >> /etc/profile.d/aws-region.sh
+echo "export AWS_REGION={{REGION}}" >> /etc/profile.d/aws-region.sh
 
 # Create application directory
 echo "Creating application directory..."
 mkdir -p /opt/wafr-app
 cd /opt/wafr-app
 
+echo "=========================================="
+echo "Deploying Application Code - $(date)"
+echo "=========================================="
+
+# Download application code from S3
+echo "Downloading application code from S3..."
+aws s3 sync s3://{{APP_BUCKET}}/ /opt/wafr-app/ --region {{REGION}}
+
+# Verify critical files exist
+if [ ! -f "/opt/wafr-app/ui_code/WAFR_Accelerator.py" ]; then
+    echo "ERROR: WAFR_Accelerator.py not found after deployment!"
+    exit 1
+fi
+
+if [ ! -f "/opt/wafr-app/requirements.txt" ]; then
+    echo "ERROR: requirements.txt not found after deployment!"
+    exit 1
+fi
+
+echo "Application code deployed successfully"
+
 # Set ownership
+echo "Setting file ownership..."
 chown -R ec2-user:ec2-user /opt/wafr-app
 
 echo "=========================================="
-echo "Setup completed - $(date)"
+echo "Installing Python Dependencies - $(date)"
+echo "=========================================="
+
+# Install Python dependencies
+echo "Installing dependencies from requirements.txt..."
+python3.11 -m pip install --upgrade pip
+python3.11 -m pip install -r /opt/wafr-app/requirements.txt
+
+# Verify critical packages
+echo "Verifying critical packages..."
+python3.11 -c "import streamlit; print(f'Streamlit version: {streamlit.__version__}')"
+python3.11 -c "import boto3; print(f'Boto3 version: {boto3.__version__}')"
+python3.11 -c "import langchain; print(f'LangChain version: {langchain.__version__}')"
+
+# Create marker file
+touch /opt/wafr-app/.dependencies-installed
+echo "Dependencies installed successfully"
+
+echo "=========================================="
+echo "Creating Systemd Service - $(date)"
+echo "=========================================="
+
+# Create systemd service file
+cat > /etc/systemd/system/wafr-streamlit.service << 'EOF'
+[Unit]
+Description=WAFR Streamlit Application
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/opt/wafr-app
+Environment="AWS_DEFAULT_REGION={{REGION}}"
+Environment="AWS_REGION={{REGION}}"
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+ExecStart=/usr/local/bin/streamlit run ui_code/WAFR_Accelerator.py --server.port 8501 --server.address 0.0.0.0
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/wafr-streamlit.log
+StandardError=append:/var/log/wafr-streamlit.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Replace region placeholder in service file
+sed -i "s/{{REGION}}/{{REGION}}/g" /etc/systemd/system/wafr-streamlit.service
+
+# Create log file with proper permissions
+touch /var/log/wafr-streamlit.log
+chown ec2-user:ec2-user /var/log/wafr-streamlit.log
+
+# Reload systemd, enable and start service
+echo "Enabling and starting WAFR Streamlit service..."
+systemctl daemon-reload
+systemctl enable wafr-streamlit.service
+systemctl start wafr-streamlit.service
+
+echo "=========================================="
+echo "Waiting for Application to Start - $(date)"
+echo "=========================================="
+
+# Wait for application to be ready (max 5 minutes)
+echo "Waiting for Streamlit to respond on port 8501..."
+COUNTER=0
+MAX_ATTEMPTS=60
+until curl -s http://localhost:8501 > /dev/null 2>&1 || [ $COUNTER -eq $MAX_ATTEMPTS ]; do
+    echo "Attempt $((COUNTER+1))/$MAX_ATTEMPTS - Waiting for Streamlit..."
+    sleep 5
+    COUNTER=$((COUNTER+1))
+done
+
+if [ $COUNTER -eq $MAX_ATTEMPTS ]; then
+    echo "WARNING: Streamlit did not respond within 5 minutes"
+    echo "Checking service status..."
+    systemctl status wafr-streamlit.service
+else
+    echo "Streamlit is responding on port 8501!"
+    touch /opt/wafr-app/.deployment-complete
+fi
+
+echo "=========================================="
+echo "Setup Completed - $(date)"
 echo "=========================================="
 echo ""
-echo "Next steps:"
-echo "1. Deploy application code to /opt/wafr-app"
-echo "2. Install Python dependencies: python3.11 -m pip install -r requirements.txt"
-echo "3. Start Streamlit: streamlit run ui_code/WAFR_Accelerator.py --server.port 8502"
+echo "Service Status:"
+systemctl status wafr-streamlit.service --no-pager
+echo ""
+echo "Application is running at http://localhost:8501"
+echo "Logs available at: /var/log/wafr-streamlit.log"
 echo ""
