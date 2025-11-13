@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload outputs as artifact
         if: success()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: stack-outputs
           path: outputs.json
