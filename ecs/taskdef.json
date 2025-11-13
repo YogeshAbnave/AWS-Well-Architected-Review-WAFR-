@@ -1,0 +1,47 @@
+{
+  "family": "wafr-accelerator-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::992167236365:role/ecsTaskExecutionRole-wafr",
+  "taskRoleArn": "arn:aws:iam::992167236365:role/ecsTaskRole-wafr",
+  "containerDefinitions": [
+    {
+      "name": "wafr-accelerator",
+      "image": "992167236365.dkr.ecr.us-east-1.amazonaws.com/wafr-accelerator:latest",
+      "portMappings": [
+        {
+          "containerPort": 8502,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "us-east-1"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "us-east-1"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8502/_stcore/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/wafr-accelerator",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

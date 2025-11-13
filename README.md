@@ -140,3 +140,4 @@ Please see [Additional Considerations](Additional%20Considerations.md)
 You should work with your security and legal teams to meet your organizational security, regulatory and compliance requirements before deployment.
 
 streamlit run ui_code/WAFR_Accelerator.py --server.port 8501 --server.address localhost
+streamlit run ui_code/WAFR_Accelerator.py --server.port 8502 --server.address localhost

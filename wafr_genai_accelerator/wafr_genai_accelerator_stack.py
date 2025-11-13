@@ -528,7 +528,7 @@ class WafrGenaiAcceleratorStack(Stack):
         # us-west-1: PrefixList: pl-4ea04527
         # us-west-2: PrefixList: pl-82a045eb
         alb_security_group.add_ingress_rule(
-            ec2.Peer.prefix_list("pl-82a045eb"),
+            ec2.Peer.prefix_list("pl-3b927c52"),
             ec2.Port.HTTP,
             "Allow inbound connections only from Cloudfront to Streamlit port"
         )
