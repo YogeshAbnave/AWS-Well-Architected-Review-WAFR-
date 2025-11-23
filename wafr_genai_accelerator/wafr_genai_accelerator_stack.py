@@ -371,6 +371,14 @@ class WafrGenaiAcceleratorStack(Stack):
             destination_bucket=promptsBucket
         )
         
+        # Create CloudWatch Log Group for application logs
+        log_group = aws_logs.LogGroup(
+            self, "StreamlitAppLogs",
+            log_group_name=f"/aws/ec2/wafr-streamlit",
+            retention=aws_logs.RetentionDays.ONE_WEEK,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+        
         # Create VPC
         vpc = ec2.Vpc(self, "StreamlitAppVPC-" + entryTimestamp,
             max_azs=2,
@@ -516,6 +524,18 @@ class WafrGenaiAcceleratorStack(Stack):
                                 "wellarchitected:ListWorkloads"
                             ],
                             resources=["*"]  
+                        ),
+                        iam.PolicyStatement(
+                            actions=[
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents",
+                                "logs:DescribeLogStreams"
+                            ],
+                            resources=[
+                                f"arn:aws:logs:{self.region}:{self.account}:log-group:/aws/ec2/wafr-streamlit:*"
+                            ],
+                            effect=iam.Effect.ALLOW
                         )
                     ]
                 )
@@ -552,6 +572,15 @@ class WafrGenaiAcceleratorStack(Stack):
             ],
             # This will propagate instance tags to volumes
             propagate_tags_to_volume_on_creation=True
+        )
+        
+        # Add CloudFormation signal configuration to EC2 instance
+        cfn_instance = ec2_create.node.default_child
+        cfn_instance.cfn_options.creation_policy = cdk.CfnCreationPolicy(
+            resource_signal=cdk.CfnResourceSignal(
+                count=1,
+                timeout="PT15M"  # 15 minutes timeout
+            )
         )
 
         EC2_INSTANCE_ID = ec2_create.instance_id
@@ -648,6 +677,24 @@ class WafrGenaiAcceleratorStack(Stack):
             evaluation_periods=2,
             alarm_description="Alert when EC2 instance status check fails"
         )
+        
+        # Create CloudFront distribution for global access
+        distribution = cloudfront.Distribution(
+            self, "StreamlitAppDistribution-" + entryTimestamp,
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=origins.LoadBalancerV2Origin(
+                    alb,
+                    protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+                    http_port=80
+                ),
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,  # Streamlit is dynamic
+                origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER,
+                compress=True
+            ),
+            comment=f"WAFR Accelerator CloudFront Distribution - {entryTimestampLabel}"
+        )
             
         #Print the Cloudfront Public Domain Name after CDK Deployment for easier access
         CfnOutput(
@@ -660,6 +707,18 @@ class WafrGenaiAcceleratorStack(Stack):
             self, "FrontEnd-EC2-Public-IP",
             value=ec2_create.instance_public_ip,
             description="EC2 instance public IP for direct access (http://<ip>:8501)"
+        )
+        
+        CfnOutput(
+            self, "CloudFrontURL",
+            value=f"https://{distribution.distribution_domain_name}",
+            description="CloudFront URL for accessing the WAFR Accelerator application"
+        )
+        
+        CfnOutput(
+            self, "ALB-DNS",
+            value=f"http://{alb.load_balancer_dns_name}",
+            description="ALB DNS name (for troubleshooting only)"
         )
         
         # Create WAF WebACL

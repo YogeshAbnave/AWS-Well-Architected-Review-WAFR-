@@ -10,6 +10,23 @@ set -o pipefail
 exec > >(tee /var/log/user-data.log)
 exec 2>&1
 
+# Function to send CloudFormation signal
+send_cfn_signal() {
+    local status=$1
+    local reason=$2
+    
+    echo "Sending CloudFormation signal: $status"
+    if command -v cfn-signal &> /dev/null; then
+        if [ "$status" = "SUCCESS" ]; then
+            cfn-signal -e 0 --stack {{STACK_NAME}} --resource StreamlitAppInstance --region {{REGION}} || true
+        else
+            cfn-signal -e 1 --stack {{STACK_NAME}} --resource StreamlitAppInstance --region {{REGION}} --reason "$reason" || true
+        fi
+    else
+        echo "WARNING: cfn-signal not available"
+    fi
+}
+
 # Function to retry commands
 retry_command() {
     local max_attempts=3
@@ -31,6 +48,9 @@ retry_command() {
     return 1
 }
 
+# Trap errors and send failure signal
+trap 'send_cfn_signal FAILURE "User data script failed at line $LINENO"' ERR
+
 echo "=========================================="
 echo "WAFR Instance Setup - $(date)"
 echo "=========================================="
@@ -43,19 +63,57 @@ retry_command yum update -y
 echo "Installing Python 3.11 and dependencies..."
 retry_command yum install -y python3.11 python3.11-pip git unzip
 
-# Install AWS CLI v2
+# Install AWS CLI v2 and CloudWatch agent
 echo "Installing AWS CLI v2..."
 cd /tmp
-curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+retry_command curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip -q awscliv2.zip
 ./aws/install
 rm -rf aws awscliv2.zip
+
+echo "Installing CloudWatch Logs agent..."
+retry_command wget -q https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+rpm -U ./amazon-cloudwatch-agent.rpm
+rm -f ./amazon-cloudwatch-agent.rpm
 
 # Set AWS region
 export AWS_DEFAULT_REGION={{REGION}}
 export AWS_REGION={{REGION}}
 echo "export AWS_DEFAULT_REGION={{REGION}}" >> /etc/profile.d/aws-region.sh
 echo "export AWS_REGION={{REGION}}" >> /etc/profile.d/aws-region.sh
+
+# Configure CloudWatch Logs agent
+echo "Configuring CloudWatch Logs agent..."
+cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json << 'CWCONFIG'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/user-data.log",
+            "log_group_name": "/aws/ec2/wafr-streamlit",
+            "log_stream_name": "{instance_id}/user-data"
+          },
+          {
+            "file_path": "/var/log/wafr-streamlit.log",
+            "log_group_name": "/aws/ec2/wafr-streamlit",
+            "log_stream_name": "{instance_id}/application"
+          }
+        ]
+      }
+    }
+  }
+}
+CWCONFIG
+
+# Start CloudWatch agent
+echo "Starting CloudWatch Logs agent..."
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -s \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json || echo "WARNING: CloudWatch agent failed to start"
 
 # Create application directory
 echo "Creating application directory..."
@@ -205,6 +263,9 @@ if [ $COUNTER -eq $MAX_ATTEMPTS ]; then
     echo ""
     echo "Checking if port 8501 is listening:"
     netstat -tlnp | grep 8501 || echo "Port 8501 is not listening"
+    
+    # Send failure signal
+    send_cfn_signal FAILURE "Streamlit application did not respond within 10 minutes"
     exit 1
 else
     echo "SUCCESS: Streamlit is responding on port 8501!"
@@ -213,17 +274,15 @@ else
     HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8501)
     echo "HTTP response code: $HTTP_CODE"
     
-    if [ "$HTTP_CODE" = "200" ]; then
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
         echo "Application is healthy and ready!"
         touch /opt/wafr-app/.deployment-complete
         
-        # Send success signal to CloudFormation if available
-        if command -v cfn-signal &> /dev/null; then
-            echo "Sending success signal to CloudFormation..."
-            cfn-signal -e 0 --stack {{STACK_NAME}} --resource StreamlitAppInstance --region {{REGION}} || true
-        fi
+        # Send success signal to CloudFormation
+        send_cfn_signal SUCCESS "Application deployed successfully"
     else
-        echo "WARNING: Application returned HTTP $HTTP_CODE instead of 200"
+        echo "ERROR: Application returned HTTP $HTTP_CODE instead of 200"
+        send_cfn_signal FAILURE "Application health check failed with HTTP $HTTP_CODE"
         exit 1
     fi
 fi
