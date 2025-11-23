@@ -19,6 +19,26 @@ check_prerequisites() {
     
     MISSING_DEPS=0
     
+    # Check Docker
+    echo "Checking Docker..."
+    if ! command -v docker &> /dev/null; then
+        echo "❌ Docker is not installed"
+        echo "   Install Docker Desktop from: https://www.docker.com/products/docker-desktop"
+        MISSING_DEPS=1
+    else
+        echo "✅ Docker: $(docker --version)"
+        
+        # Check if Docker daemon is running
+        if ! docker info &> /dev/null; then
+            echo "❌ Docker daemon is not running"
+            echo "   Please start Docker Desktop and try again"
+            MISSING_DEPS=1
+        else
+            echo "✅ Docker daemon is running"
+        fi
+    fi
+    echo ""
+    
     # Check Python
     if ! command -v python3 &> /dev/null; then
         echo "❌ Python 3 is not installed"
@@ -67,14 +87,34 @@ check_prerequisites() {
         read -p "   Install AWS CDK now? (y/n): " INSTALL_CDK
         if [ "$INSTALL_CDK" == "y" ] || [ "$INSTALL_CDK" == "Y" ]; then
             echo "   Installing AWS CDK globally..."
-            npm install -g aws-cdk
+            npm install -g aws-cdk@latest
             echo "✅ AWS CDK installed: $(cdk --version)"
         else
-            echo "❌ AWS CDK is required. Install with: npm install -g aws-cdk"
+            echo "❌ AWS CDK is required. Install with: npm install -g aws-cdk@latest"
             MISSING_DEPS=1
         fi
     else
-        echo "✅ AWS CDK: $(cdk --version)"
+        CDK_VERSION=$(cdk --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+        echo "✅ AWS CDK: $CDK_VERSION"
+        
+        # Check if CDK version is compatible (should be 2.1000.0 or later for schema 48.0.0)
+        CDK_MAJOR=$(echo $CDK_VERSION | cut -d. -f1)
+        CDK_MINOR=$(echo $CDK_VERSION | cut -d. -f2)
+        
+        if [ "$CDK_MAJOR" -lt 2 ] || ([ "$CDK_MAJOR" -eq 2 ] && [ "$CDK_MINOR" -lt 1000 ]); then
+            echo "⚠️  CDK CLI version is outdated (found $CDK_VERSION, need 2.1000.0+)"
+            echo ""
+            read -p "   Upgrade AWS CDK now? (y/n): " UPGRADE_CDK
+            if [ "$UPGRADE_CDK" == "y" ] || [ "$UPGRADE_CDK" == "Y" ]; then
+                echo "   Upgrading AWS CDK to latest version..."
+                npm install -g aws-cdk@latest
+                NEW_VERSION=$(cdk --version 2>&1 | grep -oP '\d+\.\d+\.\d+' | head -1)
+                echo "✅ AWS CDK upgraded to: $NEW_VERSION"
+            else
+                echo "⚠️  Warning: CDK version mismatch may cause deployment issues"
+                echo "   Upgrade manually with: npm install -g aws-cdk@latest"
+            fi
+        fi
     fi
     
     # Check AWS credentials

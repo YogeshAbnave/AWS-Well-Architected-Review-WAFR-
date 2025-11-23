@@ -14,6 +14,37 @@ function Check-Prerequisites {
     
     $missingDeps = $false
     
+    # Check Docker
+    Write-Host "Checking Docker..." -ForegroundColor Yellow
+    try {
+        $dockerVersion = docker --version 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Docker: $dockerVersion" -ForegroundColor Green
+            
+            # Check if Docker daemon is running
+            $null = docker info 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ Docker daemon is running" -ForegroundColor Green
+            } else {
+                Write-Host "❌ Docker daemon is not running" -ForegroundColor Red
+                Write-Host "   Please start Docker Desktop and try again" -ForegroundColor Yellow
+                Write-Host "   1. Open Docker Desktop from Start Menu" -ForegroundColor Yellow
+                Write-Host "   2. Wait for Docker to fully start (check system tray)" -ForegroundColor Yellow
+                Write-Host "   3. Run this script again" -ForegroundColor Yellow
+                $missingDeps = $true
+            }
+        } else {
+            Write-Host "❌ Docker is not installed" -ForegroundColor Red
+            Write-Host "   Install Docker Desktop from: https://www.docker.com/products/docker-desktop" -ForegroundColor Yellow
+            $missingDeps = $true
+        }
+    } catch {
+        Write-Host "❌ Docker is not installed" -ForegroundColor Red
+        Write-Host "   Install Docker Desktop from: https://www.docker.com/products/docker-desktop" -ForegroundColor Yellow
+        $missingDeps = $true
+    }
+    Write-Host ""
+    
     # Check Python
     try {
         $pythonVersion = python --version 2>&1
@@ -58,19 +89,49 @@ function Check-Prerequisites {
     
     # Check CDK
     try {
-        $cdkVersion = cdk --version 2>&1
-        Write-Host "✅ AWS CDK: $cdkVersion" -ForegroundColor Green
+        $cdkVersionOutput = cdk --version 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            # Extract version number (e.g., "2.1033.0" from output)
+            if ($cdkVersionOutput -match '(\d+\.\d+\.\d+)') {
+                $cdkVersion = $matches[1]
+                Write-Host "✅ AWS CDK: $cdkVersion" -ForegroundColor Green
+                
+                # Check if CDK version is compatible (should be 2.1000.0 or later for schema 48.0.0)
+                $versionParts = $cdkVersion.Split('.')
+                $major = [int]$versionParts[0]
+                $minor = [int]$versionParts[1]
+                
+                if ($major -lt 2 -or ($major -eq 2 -and $minor -lt 1000)) {
+                    Write-Host "⚠️  CDK CLI version is outdated (found $cdkVersion, need 2.1000.0+)" -ForegroundColor Yellow
+                    Write-Host ""
+                    $upgrade = Read-Host "   Upgrade AWS CDK now? (y/n)"
+                    if ($upgrade -eq "y" -or $upgrade -eq "Y") {
+                        Write-Host "   Upgrading AWS CDK to latest version..." -ForegroundColor Yellow
+                        npm install -g aws-cdk@latest
+                        $newVersion = cdk --version 2>&1
+                        Write-Host "✅ AWS CDK upgraded to: $newVersion" -ForegroundColor Green
+                    } else {
+                        Write-Host "⚠️  Warning: CDK version mismatch may cause deployment issues" -ForegroundColor Yellow
+                        Write-Host "   Upgrade manually with: npm install -g aws-cdk@latest" -ForegroundColor Gray
+                    }
+                }
+            } else {
+                Write-Host "✅ AWS CDK: $cdkVersionOutput" -ForegroundColor Green
+            }
+        } else {
+            throw "CDK not found"
+        }
     } catch {
         Write-Host "⚠️  AWS CDK is not installed" -ForegroundColor Yellow
         Write-Host ""
         $install = Read-Host "   Install AWS CDK now? (y/n)"
         if ($install -eq "y" -or $install -eq "Y") {
             Write-Host "   Installing AWS CDK globally..." -ForegroundColor Yellow
-            npm install -g aws-cdk
+            npm install -g aws-cdk@latest
             $cdkVersion = cdk --version 2>&1
             Write-Host "✅ AWS CDK installed: $cdkVersion" -ForegroundColor Green
         } else {
-            Write-Host "❌ AWS CDK is required. Install with: npm install -g aws-cdk" -ForegroundColor Red
+            Write-Host "❌ AWS CDK is required. Install with: npm install -g aws-cdk@latest" -ForegroundColor Red
             $missingDeps = $true
         }
     }

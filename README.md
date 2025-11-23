@@ -47,6 +47,54 @@ _* Note: The above list of features can be individually enabled and disabled by 
 
  ![WAFR Accelerator System Architecture Diagram](sys-arch.png)<br/> 
 
+## Prerequisites
+
+Before deploying this solution, ensure you have the following installed and configured:
+
+### Required Software
+
+1. **Docker Desktop** (20.10.0 or later)
+   - **Windows:** Download from [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop)
+   - **macOS:** Download from [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop)
+   - **Linux:** Install Docker Engine via your package manager
+   - ⚠️ **Important:** Docker must be running before deployment
+   - 📖 See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed setup instructions
+
+2. **Python 3.12+**
+   - Download from [python.org](https://www.python.org/downloads/)
+
+3. **Node.js and npm** (for AWS CDK)
+   - Download from [nodejs.org](https://nodejs.org/) (LTS version recommended)
+
+4. **AWS CLI**
+   - Install from [AWS CLI Installation Guide](https://aws.amazon.com/cli/)
+   - Configure with: `aws configure`
+
+5. **AWS CDK**
+   - Install globally: `npm install -g aws-cdk`
+
+### AWS Account Requirements
+
+- AWS Account with appropriate permissions
+- Access to Amazon Bedrock models in us-east-1:
+  - Claude 3.5 Sonnet
+  - Titan Text Embeddings V2
+  - Request access at: [Bedrock Model Access](https://console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess)
+
+### Verify Docker is Running
+
+Before deployment, verify Docker is running:
+
+```bash
+# Check Docker version
+docker --version
+
+# Check Docker daemon is running
+docker info
+```
+
+If Docker is not running, start Docker Desktop and wait for it to fully initialize.
+
 ## Implementation Guide
 
 ### Pre-requisites
