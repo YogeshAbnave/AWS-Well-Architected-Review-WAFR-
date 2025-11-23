@@ -10,23 +10,6 @@ set -o pipefail
 exec > >(tee /var/log/user-data.log)
 exec 2>&1
 
-# Function to send CloudFormation signal
-send_cfn_signal() {
-    local status=$1
-    local reason=$2
-    
-    echo "Sending CloudFormation signal: $status"
-    if command -v cfn-signal &> /dev/null; then
-        if [ "$status" = "SUCCESS" ]; then
-            cfn-signal -e 0 --stack {{STACK_NAME}} --resource StreamlitAppInstance --region {{REGION}} || true
-        else
-            cfn-signal -e 1 --stack {{STACK_NAME}} --resource StreamlitAppInstance --region {{REGION}} --reason "$reason" || true
-        fi
-    else
-        echo "WARNING: cfn-signal not available"
-    fi
-}
-
 # Function to retry commands
 retry_command() {
     local max_attempts=3
@@ -48,8 +31,8 @@ retry_command() {
     return 1
 }
 
-# Trap errors and send failure signal
-trap 'send_cfn_signal FAILURE "User data script failed at line $LINENO"' ERR
+# Trap errors for logging
+trap 'echo "ERROR: User data script failed at line $LINENO"' ERR
 
 echo "=========================================="
 echo "WAFR Instance Setup - $(date)"
@@ -261,8 +244,7 @@ if [ $COUNTER -eq $MAX_ATTEMPTS ]; then
     echo "Checking if port 8501 is listening:"
     netstat -tlnp | grep 8501 || echo "Port 8501 is not listening"
     
-    # Send failure signal
-    send_cfn_signal FAILURE "Streamlit application did not respond within 10 minutes"
+    echo "ERROR: Streamlit application did not respond within 10 minutes"
     exit 1
 else
     echo "SUCCESS: Streamlit is responding on port 8501!"
@@ -274,12 +256,9 @@ else
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
         echo "Application is healthy and ready!"
         touch /opt/wafr-app/.deployment-complete
-        
-        # Send success signal to CloudFormation
-        send_cfn_signal SUCCESS "Application deployed successfully"
+        echo "SUCCESS: Application deployed successfully"
     else
         echo "ERROR: Application returned HTTP $HTTP_CODE instead of 200"
-        send_cfn_signal FAILURE "Application health check failed with HTTP $HTTP_CODE"
         exit 1
     fi
 fi

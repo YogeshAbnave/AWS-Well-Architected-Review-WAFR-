@@ -574,14 +574,8 @@ class WafrGenaiAcceleratorStack(Stack):
             propagate_tags_to_volume_on_creation=True
         )
         
-        # Add CloudFormation signal configuration to EC2 instance
-        cfn_instance = ec2_create.node.default_child
-        cfn_instance.cfn_options.creation_policy = cdk.CfnCreationPolicy(
-            resource_signal=cdk.CfnResourceSignal(
-                count=1,
-                timeout="PT15M"  # 15 minutes timeout
-            )
-        )
+        # CloudFormation signals removed - relying on ALB health checks instead
+        # The ALB health checks provide sufficient verification that the app is running
 
         EC2_INSTANCE_ID = ec2_create.instance_id
         
