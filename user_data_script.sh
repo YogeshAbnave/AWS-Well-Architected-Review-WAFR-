@@ -169,7 +169,7 @@ echo "Creating Systemd Service - $(date)"
 echo "=========================================="
 
 # Create systemd service file
-cat > /etc/systemd/system/wafr-streamlit.service << 'EOF'
+cat > /etc/systemd/system/wafr-streamlit.service << EOF
 [Unit]
 Description=WAFR Streamlit Application
 After=network.target
@@ -190,9 +190,6 @@ StandardError=append:/var/log/wafr-streamlit.log
 [Install]
 WantedBy=multi-user.target
 EOF
-
-# Replace region placeholder in service file
-sed -i "s/{{REGION}}/{{REGION}}/g" /etc/systemd/system/wafr-streamlit.service
 
 # Create log file with proper permissions
 touch /var/log/wafr-streamlit.log

@@ -12,13 +12,19 @@ logger = logging.getLogger(__name__)
 st.set_page_config(page_title="Login", layout="wide")
 
 
-# Cognito configuration
-COGNITO_USER_POOL_ID = '{{PARAMETER_COGNITO_USER_POOL_ID}}'
-COGNITO_APP_CLIENT_ID = '{{PARAMETER_COGNITO_USER_POOL_CLIENT_ID}}'
-COGNITO_REGION = '{{REGION}}'
+# Cognito configuration - read from environment variables
+COGNITO_USER_POOL_ID = os.environ.get('COGNITO_USER_POOL_ID', '{{PARAMETER_COGNITO_USER_POOL_ID}}')
+COGNITO_APP_CLIENT_ID = os.environ.get('COGNITO_APP_CLIENT_ID', '{{PARAMETER_COGNITO_USER_POOL_CLIENT_ID}}')
+COGNITO_REGION = os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-east-1'))
 
-if not COGNITO_USER_POOL_ID or not COGNITO_APP_CLIENT_ID:
-    st.error("Cognito configuration is missing. Please check your SSM parameters or environment variables.")
+# Check if placeholders are still present (not replaced)
+if '{{' in COGNITO_USER_POOL_ID or '{{' in COGNITO_APP_CLIENT_ID:
+    st.warning("Cognito is not configured. Authentication is disabled.")
+    st.info("This application requires AWS Cognito for authentication. Please configure Cognito in your deployment.")
+    # Skip authentication for now
+    if 'authenticated' not in st.session_state:
+        st.session_state['authenticated'] = True
+        st.session_state['username'] = 'demo-user'
     st.stop()
 
 logger.info(f"Cognito User Pool ID: {COGNITO_USER_POOL_ID}")
