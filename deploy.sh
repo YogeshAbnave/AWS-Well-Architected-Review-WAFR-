@@ -179,10 +179,31 @@ bootstrap_cdk() {
     
     echo "Account: $AWS_ACCOUNT"
     echo "Region: $AWS_REGION"
+    echo ""
     
-    cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION
+    # Check if already bootstrapped
+    echo "Checking if CDK is already bootstrapped..."
+    if aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $AWS_REGION > /dev/null 2>&1; then
+        echo "✅ CDK is already bootstrapped"
+        echo ""
+        return
+    fi
     
-    echo "✅ CDK bootstrapped"
+    echo "Bootstrapping CDK environment..."
+    cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION \
+        --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ CDK bootstrapped successfully"
+    else
+        echo "❌ CDK bootstrap failed"
+        echo ""
+        echo "Troubleshooting:"
+        echo "1. Ensure you have Administrator access to your AWS account"
+        echo "2. Check your AWS credentials: aws sts get-caller-identity"
+        echo "3. Try running manually: cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION"
+        exit 1
+    fi
     echo ""
 }
 

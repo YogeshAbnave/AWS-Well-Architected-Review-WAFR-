@@ -4,13 +4,46 @@
 
 **Push to deploy!** This repository automatically deploys via GitHub Actions.
 
-1. **Add GitHub Secrets:** `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
-2. **Enable Bedrock Models:** Claude 3.5 Sonnet & Titan Embeddings (us-east-1)
-3. **Push to main:** `git push origin main`
-4. **Wait 15-20 minutes** for automatic deployment
-5. **Create user & login**
+### Setup Steps
 
-📖 **Full instructions:** See [PUSH-TO-DEPLOY.md](PUSH-TO-DEPLOY.md)
+1. **Add GitHub Secrets** (Required)
+   - Go to: `Settings → Secrets and variables → Actions → New repository secret`
+   - Add: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`
+
+2. **Enable Bedrock Models** (Required)
+   - Visit: https://console.aws.amazon.com/bedrock/home?region=us-east-1#/modelaccess
+   - Enable: Claude 3.5 Sonnet & Titan Text Embeddings V2
+
+3. **Deploy**
+   ```bash
+   git add .
+   git commit -m "Deploy WAFR Accelerator"
+   git push origin main
+   ```
+
+4. **Monitor Deployment**
+   - Go to GitHub → Actions tab
+   - Wait ~15-20 minutes
+
+5. **Get Production URL**
+   ```bash
+   aws cloudformation describe-stacks \
+     --stack-name WellArchitectedReviewUsingGenAIStack \
+     --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontURL`].OutputValue' \
+     --output text \
+     --region us-east-1
+   ```
+
+6. **Create User & Login**
+   ```bash
+   # Linux/Mac
+   bash deploy.sh post-deploy
+   
+   # Windows
+   .\deploy.ps1 post-deploy
+   ```
+
+📖 **Full instructions:** See [PUSH-TO-DEPLOY.md](PUSH-TO-DEPLOY.md) or [PRODUCTION-READY-CHECKLIST.md](PRODUCTION-READY-CHECKLIST.md)
 
 ---
 
@@ -51,14 +84,13 @@ _* Note: The above list of features can be individually enabled and disabled by 
 
 Before deploying this solution, ensure you have the following installed and configured:
 
-### Required Software
+### Required Software (for manual deployment only)
 
 1. **Docker Desktop** (20.10.0 or later)
    - **Windows:** Download from [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop)
    - **macOS:** Download from [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop)
    - **Linux:** Install Docker Engine via your package manager
    - ⚠️ **Important:** Docker must be running before deployment
-   - 📖 See [DOCKER_SETUP.md](DOCKER_SETUP.md) for detailed setup instructions
 
 2. **Python 3.12+**
    - Download from [python.org](https://www.python.org/downloads/)
@@ -72,6 +104,8 @@ Before deploying this solution, ensure you have the following installed and conf
 
 5. **AWS CDK**
    - Install globally: `npm install -g aws-cdk`
+
+**Note:** GitHub Actions handles all prerequisites automatically for CI/CD deployment.
 
 ### AWS Account Requirements
 
@@ -116,29 +150,25 @@ Currently, the following AWS Well-Architected lenses are supported:
 * Generative AI Lens
 * Financial Services Industry Lens
    
-### CDK Deployment 
+### Manual CDK Deployment (Optional)
 
-```
-cd wafr-genai/
-```
+If you prefer manual deployment instead of GitHub Actions:
 
-```
-sudo chmod +x deploy.sh
-```
-
-```
-./deploy.sh pre-req
+**Linux/Mac:**
+```bash
+bash deploy.sh pre-req
+bash deploy.sh deploy
+bash deploy.sh post-deploy
 ```
 
-```
-./deploy.sh deploy
+**Windows:**
+```powershell
+.\deploy.ps1 pre-req
+.\deploy.ps1 deploy
+.\deploy.ps1 post-deploy
 ```
 
-```
-./deploy.sh post-deploy
-```
-
-You can now use the Amazon Cloudfront URL from the CDK output to access the application in a web browser.
+You can now use the Amazon CloudFront URL from the CDK output to access the application in a web browser.
 <br/> 
 
 ### Testing the application
@@ -187,10 +217,6 @@ If you no longer need the application or would like to delete the CDK deployment
 ```
 cdk destroy
 ```
-
-### Additional considerations
-Please see [Additional Considerations](Additional%20Considerations.md)
-
 
 ### Disclaimer
 You should work with your security and legal teams to meet your organizational security, regulatory and compliance requirements before deployment.

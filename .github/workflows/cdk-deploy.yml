@@ -52,17 +52,21 @@ jobs:
       - name: Check if CDK is bootstrapped
         id: check-bootstrap
         run: |
-          if aws cloudformation describe-stacks --stack-name CDKToolkit --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+          if aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
             echo "bootstrapped=true" >> $GITHUB_OUTPUT
+            echo "✅ CDK is already bootstrapped"
           else
             echo "bootstrapped=false" >> $GITHUB_OUTPUT
+            echo "⚠️  CDK needs to be bootstrapped"
           fi
 
       - name: Bootstrap CDK (if needed)
         if: steps.check-bootstrap.outputs.bootstrapped == 'false'
         run: |
-          echo "Bootstrapping CDK..."
-          cdk bootstrap aws://${{ env.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+          echo "Bootstrapping CDK environment..."
+          cdk bootstrap aws://${{ env.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }} \
+            --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
+          echo "✅ CDK bootstrapped successfully"
 
       - name: Synthesize CDK stack
         run: |
@@ -82,8 +86,11 @@ jobs:
 
       - name: Deploy CDK stack
         run: |
-          echo "Deploying CDK stack..."
-          cdk deploy --require-approval never --outputs-file outputs.json
+          echo "=========================================="
+          echo "Deploying CDK stack to production..."
+          echo "=========================================="
+          cdk deploy --require-approval never --outputs-file outputs.json --verbose
+          echo "✅ Deployment completed successfully!"
 
       - name: Display stack outputs
         if: success()
