@@ -33,15 +33,43 @@ echo "Creating application directory..."
 mkdir -p /home/ec2-user/wafr-app
 cd /home/ec2-user/wafr-app
 
-# Clone or download application files from GitHub (if using GitHub deployment)
-# OR download from S3 if bucket exists
-echo "Downloading application files..."
-if aws s3 ls s3://${APP_BUCKET}/ --region ${REGION} 2>/dev/null; then
-    echo "Downloading from S3..."
-    aws s3 sync s3://${APP_BUCKET}/ /home/ec2-user/wafr-app/ --region ${REGION}
-else
-    echo "S3 bucket not found or empty. Creating placeholder..."
-    # Create a simple placeholder Streamlit app
+# Download application files from S3 with retry logic
+echo "Downloading application files from S3..."
+MAX_RETRIES=10
+RETRY_COUNT=0
+DOWNLOAD_SUCCESS=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    echo "Attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES..."
+    
+    # Check if bucket has files
+    if aws s3 ls s3://${APP_BUCKET}/ --region ${REGION} 2>/dev/null | grep -q .; then
+        echo "S3 bucket found with files. Downloading..."
+        if aws s3 sync s3://${APP_BUCKET}/ /home/ec2-user/wafr-app/ --region ${REGION} --exclude "cdk.out/*" --exclude ".git/*"; then
+            # Verify critical files exist
+            if [ -f "ui_code/WAFR_Accelerator.py" ] && [ -f "requirements.txt" ]; then
+                echo "✅ Application files downloaded successfully!"
+                DOWNLOAD_SUCCESS=true
+                break
+            else
+                echo "⚠️ Download completed but critical files missing. Retrying..."
+            fi
+        else
+            echo "⚠️ S3 sync failed. Retrying..."
+        fi
+    else
+        echo "⚠️ S3 bucket empty or not ready. Waiting 30 seconds..."
+    fi
+    
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        sleep 30
+    fi
+done
+
+# If download failed after all retries, create placeholder
+if [ "$DOWNLOAD_SUCCESS" = false ]; then
+    echo "❌ Failed to download from S3 after $MAX_RETRIES attempts. Creating placeholder..."
     mkdir -p ui_code
     cat > ui_code/WAFR_Accelerator.py <<'PYEOF'
 import streamlit as st
@@ -50,18 +78,16 @@ import time
 st.set_page_config(page_title="WAFR Accelerator", layout="wide")
 
 st.title("🚀 WAFR Accelerator")
-st.info("Application is initializing... Please wait.")
+st.error("Application files could not be downloaded from S3.")
+st.info("Please check CloudWatch logs at /aws/ec2/wafr-streamlit for details.")
 
-# Show initialization status
-with st.spinner("Loading application components..."):
-    time.sleep(2)
-
-st.success("Application is ready!")
-st.write("If you see this message, the EC2 instance is running correctly.")
-st.write(f"Region: us-east-1")
+st.write("**Troubleshooting:**")
+st.write("1. Verify S3 bucket deployment completed")
+st.write("2. Check EC2 IAM role has S3 read permissions")
+st.write("3. SSH into instance and manually sync from S3")
+st.write(f"Region: {REGION}")
 PYEOF
 
-    # Create requirements.txt
     cat > requirements.txt <<'REQEOF'
 streamlit==1.31.0
 boto3==1.34.0

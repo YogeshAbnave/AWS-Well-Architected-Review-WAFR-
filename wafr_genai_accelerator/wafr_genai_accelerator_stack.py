@@ -574,6 +574,9 @@ class WafrGenaiAcceleratorStack(Stack):
             propagate_tags_to_volume_on_creation=True
         )
         
+        # Ensure EC2 instance waits for S3 deployment to complete
+        ec2_create.node.add_dependency(appCodeDeploy)
+        
         # CloudFormation signals removed - relying on ALB health checks instead
         # The ALB health checks provide sufficient verification that the app is running
 
