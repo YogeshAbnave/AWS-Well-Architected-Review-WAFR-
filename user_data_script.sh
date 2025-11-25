@@ -36,9 +36,9 @@ cd /home/ec2-user/wafr-app
 # Clone or download application files from GitHub (if using GitHub deployment)
 # OR download from S3 if bucket exists
 echo "Downloading application files..."
-if aws s3 ls s3://${APP_BUCKET}/app/ --region ${REGION} 2>/dev/null; then
+if aws s3 ls s3://${APP_BUCKET}/ --region ${REGION} 2>/dev/null; then
     echo "Downloading from S3..."
-    aws s3 sync s3://${APP_BUCKET}/app/ /home/ec2-user/wafr-app/ --region ${REGION}
+    aws s3 sync s3://${APP_BUCKET}/ /home/ec2-user/wafr-app/ --region ${REGION}
 else
     echo "S3 bucket not found or empty. Creating placeholder..."
     # Create a simple placeholder Streamlit app
