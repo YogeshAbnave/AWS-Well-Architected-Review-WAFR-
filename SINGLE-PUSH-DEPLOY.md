@@ -4,6 +4,8 @@
 
 Your application will automatically deploy to production with a single `git push`.
 
+**Note:** The application uses EC2 (not ECS Fargate) with Docker for Lambda functions. GitHub Actions handles all Docker requirements automatically.
+
 ---
 
 ## Before You Push (One-Time Setup)
