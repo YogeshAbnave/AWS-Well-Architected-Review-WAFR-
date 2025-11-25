@@ -199,10 +199,32 @@ function Bootstrap-CDK {
     
     Write-Host "Account: $awsAccount" -ForegroundColor Gray
     Write-Host "Region: $awsRegion" -ForegroundColor Gray
+    Write-Host ""
     
-    cdk bootstrap "aws://$awsAccount/$awsRegion"
+    # Check if already bootstrapped
+    Write-Host "Checking if CDK is already bootstrapped..." -ForegroundColor Yellow
+    $bootstrapCheck = aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $awsRegion 2>&1
     
-    Write-Host "✅ CDK bootstrapped" -ForegroundColor Green
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ CDK is already bootstrapped" -ForegroundColor Green
+        Write-Host ""
+        return
+    }
+    
+    Write-Host "Bootstrapping CDK environment..." -ForegroundColor Yellow
+    cdk bootstrap "aws://$awsAccount/$awsRegion" --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ CDK bootstrapped successfully" -ForegroundColor Green
+    } else {
+        Write-Host "❌ CDK bootstrap failed" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Troubleshooting:" -ForegroundColor Yellow
+        Write-Host "1. Ensure you have Administrator access to your AWS account" -ForegroundColor Gray
+        Write-Host "2. Check your AWS credentials: aws sts get-caller-identity" -ForegroundColor Gray
+        Write-Host "3. Try running manually: cdk bootstrap aws://$awsAccount/$awsRegion" -ForegroundColor Gray
+        exit 1
+    }
     Write-Host ""
 }
 
