@@ -1,4 +1,4 @@
-name: CDK Full Stack Deployment
+name: Delete All AWS Resources
 
 on:
   push:
@@ -11,21 +11,11 @@ env:
   STACK_NAME: WellArchitectedReviewUsingGenAIStack
 
 jobs:
-  deploy:
+  delete-all-resources:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -39,100 +29,223 @@ jobs:
           echo "AWS Account: $(aws sts get-caller-identity --query Account --output text)"
           echo "AWS Region: ${{ env.AWS_REGION }}"
 
-      - name: Install AWS CDK
-        run: |
-          npm install -g aws-cdk
-          cdk --version
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Check if CDK is bootstrapped
-        id: check-bootstrap
-        run: |
-          if aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
-            echo "bootstrapped=true" >> $GITHUB_OUTPUT
-            echo "✅ CDK is already bootstrapped"
-          else
-            echo "bootstrapped=false" >> $GITHUB_OUTPUT
-            echo "⚠️  CDK needs to be bootstrapped"
-          fi
-
-      - name: Bootstrap CDK (if needed)
-        if: steps.check-bootstrap.outputs.bootstrapped == 'false'
-        run: |
-          echo "Bootstrapping CDK environment..."
-          cdk bootstrap aws://${{ env.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }} \
-            --cloudformation-execution-policies arn:aws:iam::aws:policy/AdministratorAccess
-          echo "✅ CDK bootstrapped successfully"
-
-      - name: Synthesize CDK stack
-        run: |
-          echo "Synthesizing CDK stack..."
-          cdk synth
-
       - name: Check if stack exists
         id: check-stack
         run: |
           if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Stack exists - will update"
+            echo "✅ Stack exists - will delete"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Stack doesn't exist - will create"
+            echo "⚠️  Stack doesn't exist - nothing to delete"
           fi
 
-      - name: Deploy CDK stack
+      - name: Delete CloudFormation Stack
+        if: steps.check-stack.outputs.exists == 'true'
         run: |
           echo "=========================================="
-          echo "Deploying CDK stack to production..."
+          echo "🗑️  DELETING ALL AWS RESOURCES"
           echo "=========================================="
-          cdk deploy --require-approval never --outputs-file outputs.json --verbose
-          echo "✅ Deployment completed successfully!"
+          echo ""
+          echo "Initiating stack deletion..."
+          aws cloudformation delete-stack \
+            --stack-name ${{ env.STACK_NAME }} \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ Stack deletion initiated"
 
-      - name: Display stack outputs
-        if: success()
+      - name: Wait for stack deletion
+        if: steps.check-stack.outputs.exists == 'true'
         run: |
-          echo "=========================================="
-          echo "Deployment Complete!"
-          echo "=========================================="
-          if [ -f outputs.json ]; then
-            cat outputs.json
+          echo ""
+          echo "Waiting for stack deletion to complete..."
+          echo "This may take 5-10 minutes..."
+          echo ""
+          
+          MAX_ATTEMPTS=40
+          ATTEMPT=0
+          
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            
+            if aws cloudformation describe-stacks \
+              --stack-name ${{ env.STACK_NAME }} \
+              --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+              
+              STATUS=$(aws cloudformation describe-stacks \
+                --stack-name ${{ env.STACK_NAME }} \
+                --region ${{ env.AWS_REGION }} \
+                --query "Stacks[0].StackStatus" \
+                --output text)
+              
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS - Status: $STATUS"
+              
+              if [ "$STATUS" = "DELETE_FAILED" ]; then
+                echo "❌ Stack deletion failed!"
+                echo "Checking for errors..."
+                aws cloudformation describe-stack-events \
+                  --stack-name ${{ env.STACK_NAME }} \
+                  --region ${{ env.AWS_REGION }} \
+                  --query "StackEvents[?ResourceStatus=='DELETE_FAILED']" \
+                  --output table
+                exit 1
+              fi
+              
+              sleep 15
+            else
+              echo "✅ Stack successfully deleted!"
+              break
+            fi
+          done
+          
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "⚠️  Deletion taking longer than expected"
+            echo "Check AWS Console for status"
+          fi
+
+      - name: Clean up remaining S3 buckets
+        if: steps.check-stack.outputs.exists == 'true'
+        run: |
+          echo ""
+          echo "Checking for remaining S3 buckets..."
+          
+          BUCKETS=$(aws s3 ls | grep -E "wafr-accelerator|wafr-prompts" | awk '{print $3}' || true)
+          
+          if [ -n "$BUCKETS" ]; then
+            echo "Found buckets to delete:"
+            echo "$BUCKETS"
             echo ""
-            echo "Application URL:"
-            jq -r '.[$ENV.STACK_NAME].CloudFrontURL // "Not found"' outputs.json
+            
+            for BUCKET in $BUCKETS; do
+              echo "Deleting bucket: $BUCKET"
+              aws s3 rm "s3://$BUCKET" --recursive --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              aws s3 rb "s3://$BUCKET" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+            
+            echo "✅ S3 buckets cleaned up"
+          else
+            echo "✅ No S3 buckets found"
           fi
 
-      - name: Upload outputs as artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stack-outputs
-          path: outputs.json
+      - name: Clean up CloudWatch Log Groups
+        if: steps.check-stack.outputs.exists == 'true'
+        run: |
+          echo ""
+          echo "Checking for CloudWatch Log Groups..."
+          
+          LOG_GROUPS=$(aws logs describe-log-groups \
+            --region ${{ env.AWS_REGION }} \
+            --query "logGroups[?contains(logGroupName, 'wafr-streamlit')].logGroupName" \
+            --output text || true)
+          
+          if [ -n "$LOG_GROUPS" ]; then
+            echo "Found log groups to delete:"
+            echo "$LOG_GROUPS"
+            echo ""
+            
+            for LOG_GROUP in $LOG_GROUPS; do
+              echo "Deleting log group: $LOG_GROUP"
+              aws logs delete-log-group \
+                --log-group-name "$LOG_GROUP" \
+                --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+            
+            echo "✅ Log groups cleaned up"
+          else
+            echo "✅ No log groups found"
+          fi
 
-      - name: Deployment summary
+      - name: Verify cleanup
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "Verifying cleanup..."
+          echo "=========================================="
+          echo ""
+          
+          # Check stack
+          if aws cloudformation describe-stacks \
+            --stack-name ${{ env.STACK_NAME }} \
+            --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            echo "⚠️  CloudFormation stack: Still exists"
+          else
+            echo "✅ CloudFormation stack: DELETED"
+          fi
+          
+          # Check EC2 instances
+          INSTANCES=$(aws ec2 describe-instances \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=WellArchitectedReview" \
+            --query "Reservations[].Instances[?State.Name!='terminated'].InstanceId" \
+            --output text || true)
+          
+          if [ -n "$INSTANCES" ]; then
+            echo "⚠️  EC2 instances: $INSTANCES still exist"
+          else
+            echo "✅ EC2 instances: DELETED"
+          fi
+          
+          # Check VPCs
+          VPCS=$(aws ec2 describe-vpcs \
+            --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:Project,Values=WellArchitectedReview" \
+            --query "Vpcs[].VpcId" \
+            --output text || true)
+          
+          if [ -n "$VPCS" ]; then
+            echo "⚠️  VPCs: $VPCS still exist"
+          else
+            echo "✅ VPCs: DELETED"
+          fi
+          
+          # Check S3 buckets
+          BUCKETS=$(aws s3 ls | grep -E "wafr-accelerator|wafr-prompts" || true)
+          
+          if [ -n "$BUCKETS" ]; then
+            echo "⚠️  S3 buckets: Still exist"
+          else
+            echo "✅ S3 buckets: DELETED"
+          fi
+
+      - name: Deletion summary
         if: success()
         run: |
-          echo "✅ Stack deployed successfully!"
           echo ""
-          echo "Next steps:"
-          echo "1. Get the CloudFront URL from outputs above"
-          echo "2. Create a Cognito user (see DEPLOYMENT-GUIDE.md)"
-          echo "3. Login and start using the application"
+          echo "=========================================="
+          echo "✅ CLEANUP COMPLETE"
+          echo "=========================================="
           echo ""
-          echo "To create a user, run:"
-          echo "  bash deploy.sh post-deploy"
-          echo "or"
-          echo "  .\deploy.ps1 post-deploy"
+          echo "All AWS resources have been deleted!"
+          echo ""
+          echo "Cost: $0/hour 💰"
+          echo ""
+          echo "What was deleted:"
+          echo "  - CloudFormation stack"
+          echo "  - EC2 instance"
+          echo "  - VPC and networking"
+          echo "  - Load balancers"
+          echo "  - CloudFront distribution"
+          echo "  - S3 buckets"
+          echo "  - DynamoDB tables"
+          echo "  - Lambda functions"
+          echo "  - Bedrock Knowledge Base"
+          echo "  - OpenSearch collection"
+          echo "  - IAM roles and policies"
+          echo "  - CloudWatch logs"
+          echo "  - And everything else!"
+          echo ""
 
       - name: Notify on failure
         if: failure()
         run: |
-          echo "❌ Deployment failed!"
+          echo ""
+          echo "❌ Deletion failed or incomplete!"
+          echo ""
           echo "Check the logs above for errors"
-          echo "Common issues:"
-          echo "- Bedrock model access not enabled"
-          echo "- AWS credentials insufficient permissions"
-          echo "- Resource limits exceeded"
+          echo ""
+          echo "You may need to:"
+          echo "1. Manually delete S3 buckets that aren't empty"
+          echo "2. Wait for ENIs to detach from VPC"
+          echo "3. Check AWS Console for stuck resources"
+          echo ""
+          echo "To retry, run:"
+          echo "  aws cloudformation delete-stack --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }}"
